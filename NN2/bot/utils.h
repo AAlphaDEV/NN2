@@ -26,5 +26,8 @@ int startwith(char *scmp, char *str);
 int occurences(char *str, const char *s);
 char *split(char *str, const char c);
 char *splits(char *str, const char *sp);
+char *filename_frompath(char *str);
+char *parent_frompath(char *str);
+char *contentheader(char *str);
 
 #endif // UTILS_H

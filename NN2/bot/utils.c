@@ -118,6 +118,79 @@ int occurences(char *str, const char *s)
     return occ;
 }
 
+char *contentheader(char *str)
+{
+    char *header;
+    char *content;
+
+    int str_sz = strlen(str);
+    int i;
+    for(i = 0; i<str_sz; i++)
+    {
+        if(str_sz > i+3)
+        {
+            if(str[i] == '\r' && str[i+1] == '\n' && str[i+2] == '\r' && str[i+3] == '\n')
+            {
+                str[i] = 0;
+                header = str;
+                content = header+(i+4);
+                break;
+            }
+        } else
+        {
+            printf("%d - %d\n", str_sz, i);
+            header = str;
+            content = NULL;
+            break;
+        }
+    }
+
+    return content;
+}
+
+char *filename_frompath(char *str)
+{
+    if(strchr(str, '\\') == NULL && strchr(str, '/') == NULL)
+        return str;
+    int index = -1;
+    size_t str_sz = strlen(str);
+    int i;
+    for(i = 0; i<str_sz; i++)
+    {
+        if(str[i] == '\\' || str[i] == '/')
+            index = i;
+    }
+    if(index == -1)
+        return str;
+    if(index+1 >= str_sz)
+        return str + index;
+    return str + index + 1;
+}
+
+char *parent_frompath(char *str)
+{
+    if(strchr(str, '\\') == NULL && strchr(str, '/') == NULL)
+        return str;
+    int index = -1;
+    size_t str_sz = strlen(str);
+    int i;
+    for(i = 0; i<str_sz; i++)
+    {
+        if(str[i] == '\\' || str[i] == '/')
+            index = i;
+    }
+    if(index == -1)
+    {
+        str[0] = '.';
+        str[1] = 0;
+        return str;
+    }
+    if(index+1 >= str_sz)
+        return str;
+    str[index] = 0;
+    return str;
+}
+
 char *split(char *str, const char c)
 {
     unsigned int str_sz = strlen(str);

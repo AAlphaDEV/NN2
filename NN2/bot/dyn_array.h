@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "nn_structs.h"
 
@@ -21,8 +22,11 @@ int push_item(dyn_array_t *dyn, DATA item);
 int push_item_data(dyn_array_t *dyn, nn_req_data_t data);
 int push_item_signal(dyn_array_t *dyn, nn_req_signal_t sig);
 
+int remove_item(dyn_array_t *dyn, int index);
+
 int get_item(dyn_array_t *dyn, int index, DATA *data);
 int get_item_data(dyn_array_t *dyn, int index, nn_req_data_t *data);
+int get_item_signal(dyn_array_t *dyn, int index, nn_req_signal_t *data);
 
 int free_array(dyn_array_t *dyn);
 int pop_item(dyn_array_t *dyn);

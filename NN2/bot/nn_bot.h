@@ -31,15 +31,20 @@ unsigned int get_req_count();
 void inc_req_count();
 void dec_req_count();
 
+int check_signal_queue();
 void check_queue();
 
 void bot_startup(char *host, unsigned long request_time);
 void bot_cleanup(char *host);
 int analyse_recv(char *recv_buf, size_t recv_sz);
+void parse_recv(char *req, char **out_params, int *params_count);
 
 void start_request(char *req, char **params, int params_count);
 void *request_thread_func(void *arg);
 
-void parse_recv(char *req, char **out_params, int *params_count);
+void bot_update(char *host);
+
+void start_log();
+void close_log();
 
 #endif // NN_BOT_H

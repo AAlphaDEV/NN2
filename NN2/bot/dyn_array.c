@@ -17,6 +17,11 @@ int init_array(dyn_array_t *dyn, size_t initial_sz, size_t item_sz)
 
 int push_item(dyn_array_t *dyn, DATA item)
 {
+    if(dyn->_array == NULL)
+    {
+        fprintf(stderr, "[!!] Error : array uninitialized.\n");
+        return -1;
+    }
     if(dyn->length >= dyn->capacity)
     {
         //printf("reallocation\n");
@@ -33,6 +38,33 @@ int push_item(dyn_array_t *dyn, DATA item)
     dyn->_array[dyn->length] = item;
     dyn->length++;
 
+    return 0;
+}
+
+int remove_item(dyn_array_t *dyn, int index)
+{
+    return -1;
+    if(dyn->_array == NULL || dyn->length == 0)
+        return -1;
+    void *_tmp = malloc(dyn->capacity * dyn->item_sz);
+    if(_tmp == NULL)
+    {
+        fprintf(stderr, "[!!] Error : failed to reallocate array's memory.\n");
+        return -1;
+    }
+
+    if(index != 0)
+        memmove(_tmp, dyn->_array, index * dyn->item_sz); //copy everything BEFORE the index
+
+    printf("sizeof : %d\n", dyn->item_sz);
+    printf("size : %x\n", (int) (dyn->_array + (index+1)));
+    printf("other : %d\n", (dyn->length - index - 1) * dyn->item_sz);
+    if(index != (dyn->length - 1))
+        memmove((void *) (_tmp + index), (void *) (dyn->_array + (index+1)), (dyn->length - index - 1) * dyn->item_sz); //copy everything AFTER the index
+
+    free(dyn->_array);
+    dyn->_array = _tmp;
+    dyn->length--;
     return 0;
 }
 
@@ -86,6 +118,14 @@ int get_item_data(dyn_array_t *dyn, int index, nn_req_data_t *data)
     da_data_t un;
     int r = get_item(dyn, index, &un);
     *data = un._data;
+    return r;
+}
+
+int get_item_signal(dyn_array_t *dyn, int index, nn_req_signal_t *data)
+{
+    da_data_t un;
+    int r = get_item(dyn, index, &un);
+    *data = un._signal;
     return r;
 }
 
